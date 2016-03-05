@@ -513,13 +513,18 @@ GenericReaderPlugin::getSequenceTimeBefore(const OfxRangeI& sequenceTimeDomain, 
             return eGetSequenceTimeBeforeSequence;
             
         case eBeforeAfterBounce: { //bounce
-            int sequenceIntervalsCount = timeOffsetFromStart / (sequenceTimeDomain.max - sequenceTimeDomain.min);
+            int range = sequenceTimeDomain.max - sequenceTimeDomain.min;
+            int sequenceIntervalsCount = range == 0 ? 0 : timeOffsetFromStart / range;
             ///if the sequenceIntervalsCount is odd then do exactly like loop, otherwise do the load the opposite frame
             if (sequenceIntervalsCount % 2 == 0) {
-                timeOffsetFromStart %= (int)(sequenceTimeDomain.max - sequenceTimeDomain.min);
+                if (range != 0) {
+                    timeOffsetFromStart %= (int)range;
+                }
                 *sequenceTime = sequenceTimeDomain.min - timeOffsetFromStart;
             } else {
-                timeOffsetFromStart %= (int)(sequenceTimeDomain.max - sequenceTimeDomain.min);
+                if (range != 0) {
+                    timeOffsetFromStart %= (int)range;
+                }
                 *sequenceTime = sequenceTimeDomain.max + timeOffsetFromStart;
             }
             return eGetSequenceTimeBeforeSequence;
@@ -2401,7 +2406,8 @@ GenericReaderDescribeInContextBegin(OFX::ImageEffectDescriptor &desc,
                                     bool supportsRGBA,
                                     bool supportsRGB,
                                     bool supportsAlpha,
-                                    bool supportsTiles)
+                                    bool supportsTiles,
+                                    bool addSeparatorAfterLastParameter)
 {
     gHostIsNatron = (OFX::getImageEffectHostDescription()->isNatron);
 
@@ -2779,6 +2785,9 @@ GenericReaderDescribeInContextBegin(OFX::ImageEffectDescriptor &desc,
         param->setAnimates(false);
         param->setEvaluateOnChange(false);
         desc.addClipPreferencesSlaveParam(*param);
+        if (addSeparatorAfterLastParameter) {
+            param->setLayoutHint(OFX::eLayoutHintDivider);
+        }
         if (page) {
             page->addChild(*param);
         }

@@ -460,6 +460,9 @@ namespace Exr {
         for (FilesMap::iterator it = _files.begin(); it!= _files.end(); ++it) {
             delete it->second;
         }
+#ifdef OFX_IO_MT_EXR
+        delete _lock;
+#endif
     }
     
     void FileManager::initialize() {
@@ -708,7 +711,7 @@ ReadEXRPluginFactory::describeInContext(OFX::ImageEffectDescriptor &desc,
 {
     // make some pages and to things in
     PageParamDescriptor *page = GenericReaderDescribeInContextBegin(desc, context, isVideoStreamPlugin(),
-                                                                    kSupportsRGBA, kSupportsRGB, kSupportsAlpha, kSupportsTiles);
+                                                                    kSupportsRGBA, kSupportsRGB, kSupportsAlpha, kSupportsTiles, true);
 
     GenericReaderDescribeInContextEnd(desc, context, page, "reference", "reference");
 }
