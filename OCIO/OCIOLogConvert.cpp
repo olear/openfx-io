@@ -36,7 +36,9 @@
 
 namespace OCIO = OCIO_NAMESPACE;
 
-static bool gWasOCIOEnvVarFound = false;
+using namespace OFX;
+
+OFXS_NAMESPACE_ANONYMOUS_ENTER
 
 #define kPluginName "OCIOLogConvertOFX"
 #define kPluginGrouping "Color/OCIO"
@@ -56,6 +58,8 @@ static bool gWasOCIOEnvVarFound = false;
 #define kParamOperationHint "Operation to perform. Lin is the SCENE_LINEAR profile and Log is the COMPOSITING_LOG profile of the OCIO configuration."
 #define kParamOperationOptionLogToLin "Log to Lin"
 #define kParamOperationOptionLinToLog "Lin to Log"
+
+static bool gWasOCIOEnvVarFound = false;
 
 class OCIOLogConvertPlugin : public OFX::ImageEffect
 {
@@ -700,7 +704,6 @@ OCIOLogConvertPlugin::changedClip(const OFX::InstanceChangedArgs &args, const st
     }
 }
 
-using namespace OFX;
 
 mDeclarePluginFactory(OCIOLogConvertPluginFactory, {}, {});
 
@@ -772,8 +775,6 @@ void OCIOLogConvertPluginFactory::describeInContext(OFX::ImageEffectDescriptor &
         param->setHint(kOCIOParamConfigFileHint);
         param->setStringType(OFX::eStringTypeFilePath);
         param->setFilePathExists(true);
-        param->setAnimates(true);
-        desc.addClipPreferencesSlaveParam(*param);
         // the OCIO config can only be set in a portable fashion using the environment variable.
         // Nuke, for example, doesn't support changing the entries in a ChoiceParam outside of describeInContext.
         // disable it, and set the default from the env variable.
@@ -789,6 +790,8 @@ void OCIOLogConvertPluginFactory::describeInContext(OFX::ImageEffectDescriptor &
         } else {
             param->setDefault(file);
         }
+        param->setAnimates(false);
+        desc.addClipPreferencesSlaveParam(*param);
         if (page) {
             page->addChild(*param);
         }
@@ -828,5 +831,7 @@ ImageEffect* OCIOLogConvertPluginFactory::createInstance(OfxImageEffectHandle ha
 
 static OCIOLogConvertPluginFactory p(kPluginIdentifier, kPluginVersionMajor, kPluginVersionMinor);
 mRegisterPluginFactoryInstance(p)
+
+OFXS_NAMESPACE_ANONYMOUS_EXIT
 
 #endif // OFX_IO_USING_OCIO

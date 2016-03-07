@@ -81,6 +81,10 @@ namespace SeExpr {
 #include "ofxsTransformInteract.h"
 #include "ofxsMatrix2D.h"
 
+using namespace OFX;
+
+OFXS_NAMESPACE_ANONYMOUS_ENTER
+
 #define kPluginName "SeNoise"
 #define kPluginGrouping "Draw"
 #define kPluginDescription "Generate noise."
@@ -220,8 +224,6 @@ enum VoronoiTypeEnum {
 #define kPageColorHint "Color properties of the noise"
 
 #define kGroupColor "colorGroup"
-
-using namespace OFX;
 
 
 static bool gHostIsNatron   = false;
@@ -646,13 +648,11 @@ private:
     /* Override the clip preferences, we need to say we are setting the frame varying flag */
     virtual void getClipPreferences(OFX::ClipPreferencesSetter &clipPreferences) OVERRIDE FINAL
     {
-        if (!_noiseZSlope->getIsAnimating()) {
-            double noiseZSlope;
-            _noiseZSlope->getValue(noiseZSlope);
-            if (noiseZSlope != 0.) {
-                clipPreferences.setOutputFrameVarying(true);
-                clipPreferences.setOutputHasContinousSamples(true);
-            }
+        double noiseZSlope;
+        _noiseZSlope->getValue(noiseZSlope);
+        if (noiseZSlope != 0.) {
+            clipPreferences.setOutputFrameVarying(true);
+            clipPreferences.setOutputHasContinousSamples(true);
         }
     }
 
@@ -1231,6 +1231,7 @@ void SeNoisePluginFactory::describeInContext(OFX::ImageEffectDescriptor &desc, O
         param->setRange(-DBL_MAX, DBL_MAX);
         param->setDisplayRange(0., 1.);
         param->setDefault(kParamNoiseZSlopeDefault);
+        param->setAnimates(false);
         desc.addClipPreferencesSlaveParam(*param);
         if (page) {
             page->addChild(*param);
@@ -1439,3 +1440,5 @@ OFX::ImageEffect* SeNoisePluginFactory::createInstance(OfxImageEffectHandle hand
 
 static SeNoisePluginFactory p(kPluginIdentifier, kPluginVersionMajor, kPluginVersionMinor);
 mRegisterPluginFactoryInstance(p)
+
+OFXS_NAMESPACE_ANONYMOUS_EXIT

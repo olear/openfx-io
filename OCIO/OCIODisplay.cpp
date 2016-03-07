@@ -33,6 +33,10 @@
 #include "IOUtility.h"
 #include "GenericOCIO.h"
 
+using namespace OFX;
+
+OFXS_NAMESPACE_ANONYMOUS_ENTER
+
 #define kPluginName "OCIODisplayOFX"
 #define kPluginGrouping "Color/OCIO"
 #define kPluginDescription "Uses the OpenColorIO library to apply a colorspace conversion to an image sequence, so that it can be accurately represented on a specific display device."
@@ -330,6 +334,9 @@ OCIODisplayPlugin::OCIODisplayPlugin(OfxImageEffectHandle handle)
 , _gamma(0)
 , _channel(0)
 , _ocio(new GenericOCIO(this))
+, _procChannel(eChannelSelectorRGB)
+, _procGain(-1)
+, _procGamma(-1)
 {
     _dstClip = fetchClip(kOfxImageEffectOutputClipName);
     assert(_dstClip && (_dstClip->getPixelComponents() == OFX::ePixelComponentRGBA ||
@@ -586,6 +593,8 @@ OCIODisplayPlugin::apply(double time, const OfxRectI& renderWindow, float *pixel
     double gamma = _gamma->getValueAtTime(time);
 
     try {
+        OCIO::ConstConfigRcPtr config = _ocio->getConfig();
+        assert(config);
         OFX::MultiThread::AutoMutex guard(_procMutex);
         if (!_proc ||
             _procInputSpace != inputSpace ||
@@ -595,8 +604,6 @@ OCIODisplayPlugin::apply(double time, const OfxRectI& renderWindow, float *pixel
             _procGain != gain ||
             _procGamma != gamma) {
 
-            OCIO::ConstConfigRcPtr config = _ocio->getConfig();
-            assert(config);
             OCIO::DisplayTransformRcPtr transform = OCIO::DisplayTransform::Create();
             transform->setInputColorSpaceName(inputSpace.c_str());
 
@@ -873,7 +880,6 @@ OCIODisplayPlugin::changedClip(const OFX::InstanceChangedArgs &args, const std::
     }
 }
 
-using namespace OFX;
 
 mDeclarePluginFactory(OCIODisplayPluginFactory, {}, {});
 
@@ -1058,5 +1064,6 @@ ImageEffect* OCIODisplayPluginFactory::createInstance(OfxImageEffectHandle handl
 static OCIODisplayPluginFactory p(kPluginIdentifier, kPluginVersionMajor, kPluginVersionMinor);
 mRegisterPluginFactoryInstance(p)
 
+OFXS_NAMESPACE_ANONYMOUS_EXIT
 
 #endif // OFX_IO_USING_OCIO
