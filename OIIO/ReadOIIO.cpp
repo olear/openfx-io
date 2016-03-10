@@ -30,6 +30,10 @@
 #include <climits>
 #include <algorithm>
 
+#ifdef _WIN32
+#include <IlmThreadPool.h>
+#endif
+
 #include "ofxsMacros.h"
 
 #include "OIIOGlobal.h"
@@ -380,7 +384,7 @@ ReadOIIOPlugin::ReadOIIOPlugin(bool useRGBAChoices,
     //Don't try to restore any state in here, do so in restoreState instead which is called
     //right away after the constructor.
     
-    setOIIOThreads();
+    initOIIOThreads();
 
 }
 
@@ -2653,6 +2657,11 @@ ReadOIIOPluginFactory<useRGBAChoices>::unload()
     // teardown is dangerous if there are other users
     ImageCache::destroy(sharedcache);
 #  endif
+    
+#ifdef _WIN32
+	//Kill all threads otherwise when the static global thread pool joins it threads there is a deadlock on Mingw
+    IlmThread::ThreadPool::globalThreadPool().setNumThreads(0);
+#endif
 }
 
 static std::string oiio_versions()

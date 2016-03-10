@@ -31,7 +31,7 @@ GCC_DIAG_ON(unused-parameter)
 OIIO_NAMESPACE_USING
 
 
-inline void setOIIOThreads()
+inline void initOIIOThreads()
 {
     //See https://github.com/lgritz/oiio/commit/7f7934fafc127a9f3bc51b6aa5e2e77b1b8a26db
     //We want OpenEXR to use all threads, while we do not want OIIO to use all threads for its image
@@ -61,6 +61,5 @@ inline void setOIIOThreads()
         }
     }
 }
-
 
 #endif /* IO_GLOBAL_OIIO_H*/

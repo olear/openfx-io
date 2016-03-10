@@ -225,7 +225,7 @@ OIIOResizePlugin::OIIOResizePlugin(OfxImageEffectHandle handle)
             break;
     }
     
-    setOIIOThreads();
+    initOIIOThreads();
 }
 
 OIIOResizePlugin::~OIIOResizePlugin()
@@ -712,6 +712,7 @@ OIIOResizePlugin::getClipPreferences(OFX::ClipPreferencesSetter &clipPreferences
 
 
 mDeclarePluginFactory(OIIOResizePluginFactory, {}, {});
+
 
 /** @brief The basic describe function, passed a plugin descriptor */
 void OIIOResizePluginFactory::describe(OFX::ImageEffectDescriptor &desc)

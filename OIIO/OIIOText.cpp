@@ -164,7 +164,7 @@ OIIOTextPlugin::OIIOTextPlugin(OfxImageEffectHandle handle)
     _textColor = fetchRGBAParam(kParamTextColor);
     assert(_position && _text && _fontSize && _fontName && _textColor);
     
-    setOIIOThreads();
+    initOIIOThreads();
 }
 
 OIIOTextPlugin::~OIIOTextPlugin()

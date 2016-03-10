@@ -35,6 +35,10 @@ GCC_DIAG_ON(unused-parameter)
 
 #include <ofxsMultiPlane.h>
 
+#ifdef _WIN32
+#include <IlmThreadPool.h>
+#endif
+
 using namespace OFX;
 
 OFXS_NAMESPACE_ANONYMOUS_ENTER
@@ -412,7 +416,7 @@ WriteOIIOPlugin::WriteOIIOPlugin(OfxImageEffectHandle handle, const std::vector<
     std::string filename;
     _fileParam->getValue(filename);
     refreshParamsVisibility(filename);
-    setOIIOThreads();
+    initOIIOThreads();
 }
 
 
@@ -1379,7 +1383,15 @@ static std::string oiio_versions()
     return oss.str();
 }
 
-mDeclareWriterPluginFactory(WriteOIIOPluginFactory, {}, false);
+mDeclareWriterPluginFactory(WriteOIIOPluginFactory, ;, false);
+
+void WriteOIIOPluginFactory::unload()
+{
+#ifdef _WIN32
+    //Kill all threads otherwise when the static global thread pool joins it threads there is a deadlock on Mingw
+    IlmThread::ThreadPool::globalThreadPool().setNumThreads(0);
+#endif
+}
 
 void WriteOIIOPluginFactory::load()
 {
