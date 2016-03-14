@@ -314,10 +314,20 @@ GenericReaderPlugin::refreshSubLabel(OfxTime time)
 {
     assert(_sublabel);
     double sequenceTime;
-    (void)getSequenceTimeHold(time, &sequenceTime);
-    std::string filename;
-    (void)getFilenameAtSequenceTime(sequenceTime, false, &filename);
-    _sublabel->setValue(basename(filename));
+    GetSequenceTimeRetEnum getTimeRet = getSequenceTimeHold(time, &sequenceTime);
+    if (getTimeRet == eGetSequenceTimeWithinSequence ||
+        getTimeRet == eGetSequenceTimeBeforeSequence ||
+        getTimeRet == eGetSequenceTimeAfterSequence) {
+        std::string filename;
+        GetFilenameRetCodeEnum getFileNameRet = getFilenameAtSequenceTime(sequenceTime, false, false, &filename);
+        if (getFileNameRet == eGetFileNameReturnedFullRes) {
+            _sublabel->setValue(basename(filename));
+        } else {
+            _sublabel->setValue("");
+        }
+    } else {
+        _sublabel->setValue("");
+    }
 }
 
 
@@ -536,7 +546,7 @@ GenericReaderPlugin::getSequenceTimeBefore(const OfxRangeI& sequenceTimeDomain, 
             setPersistentMessage(OFX::Message::eMessageError, "", "Out of frame range");
             return eGetSequenceTimeError;
     }
-
+    return eGetSequenceTimeError;
 }
 
 GenericReaderPlugin::GetSequenceTimeRetEnum
@@ -576,6 +586,7 @@ GenericReaderPlugin::getSequenceTimeAfter(const OfxRangeI& sequenceTimeDomain, d
             setPersistentMessage(OFX::Message::eMessageError, "", "Out of frame range");
             return eGetSequenceTimeError;
     }
+    return eGetSequenceTimeError;
 }
 
 GenericReaderPlugin::GetSequenceTimeRetEnum
@@ -598,10 +609,10 @@ GenericReaderPlugin::getSequenceTimeHold(double t, double *sequenceTime)
     if (sequenceTimeDomain.min <= *sequenceTime && *sequenceTime <= sequenceTimeDomain.max) {
         return eGetSequenceTimeWithinSequence;
     } else if (*sequenceTime < sequenceTimeDomain.min) {
-        getSequenceTimeBefore(sequenceTimeDomain, t, eBeforeAfterHold, sequenceTime);
+        return getSequenceTimeBefore(sequenceTimeDomain, t, eBeforeAfterHold, sequenceTime);
     } else {
         assert(*sequenceTime > sequenceTimeDomain.max); ///the time given is after the sequence
-        getSequenceTimeAfter(sequenceTimeDomain, t, eBeforeAfterHold, sequenceTime);
+        return getSequenceTimeAfter(sequenceTimeDomain, t, eBeforeAfterHold, sequenceTime);
     }
     return eGetSequenceTimeError;
 }
@@ -675,6 +686,7 @@ static bool checkIfFileExists (const std::string& path)
 GenericReaderPlugin::GetFilenameRetCodeEnum
 GenericReaderPlugin::getFilenameAtSequenceTime(double sequenceTime,
                                                bool proxyFiles,
+                                               bool checkForExistingFile,
                                                std::string *filename)
 {
     GetFilenameRetCodeEnum ret;
@@ -706,19 +718,23 @@ GenericReaderPlugin::getFilenameAtSequenceTime(double sequenceTime,
             filenameGood = false;
         }
         else {
-            filenameGood = checkIfFileExists(*filename);
+            if (checkForExistingFile) {
+                filenameGood = checkIfFileExists(*filename);
+            }
         }
         if (filenameGood) {
             ret = eGetFileNameReturnedFullRes;
             // now, try the proxy file
             if (proxyFiles) {
                 std::string proxyFileName;
-                bool proxyGood;
+                bool proxyGood = true;
                 _proxyFileParam->getValueAtTime(sequenceTime + offset, proxyFileName);
                 if (proxyFileName.empty()) {
                     proxyGood = false;
                 } else {
-                    proxyGood = checkIfFileExists(proxyFileName);
+                    if (checkForExistingFile) {
+                        proxyGood = checkIfFileExists(proxyFileName);
+                    }
                 }
                 if (proxyGood) {
                     // proxy file exists, replace the filename with the proxy name
@@ -786,7 +802,7 @@ GenericReaderPlugin::getFilenameAtTime(double t, std::string *filename)
         case eGetSequenceTimeAfterSequence:
             break;
     }
-    GetFilenameRetCodeEnum getFilenameAtSequenceTimeRet = getFilenameAtSequenceTime(sequenceTime, false, filename);
+    GetFilenameRetCodeEnum getFilenameAtSequenceTimeRet = getFilenameAtSequenceTime(sequenceTime, false, true, filename);
     switch (getFilenameAtSequenceTimeRet) {
         case eGetFileNameFailed:
             // do not setPersistentMessage()!
@@ -1230,7 +1246,7 @@ GenericReaderPlugin::getRegionOfDefinition(const OFX::RegionOfDefinitionArgument
 
     /*We don't want to use the proxy image for the region of definition*/
     std::string filename;
-    GetFilenameRetCodeEnum getFilenameAtSequenceTimeRet = getFilenameAtSequenceTime(sequenceTime, false, &filename);
+    GetFilenameRetCodeEnum getFilenameAtSequenceTimeRet = getFilenameAtSequenceTime(sequenceTime, false, true, &filename);
     switch (getFilenameAtSequenceTimeRet) {
         case eGetFileNameFailed:
             setPersistentMessage(OFX::Message::eMessageError, "", filename + ": Cannot load frame");
@@ -1469,7 +1485,7 @@ GenericReaderPlugin::render(const OFX::RenderArguments &args)
     }
 
     std::string filename;
-    GetFilenameRetCodeEnum getFilenameAtSequenceTimeRet = getFilenameAtSequenceTime(sequenceTime, false, &filename);
+    GetFilenameRetCodeEnum getFilenameAtSequenceTimeRet = getFilenameAtSequenceTime(sequenceTime, false, true, &filename);
     switch (getFilenameAtSequenceTimeRet) {
         case eGetFileNameFailed:
             setPersistentMessage(OFX::Message::eMessageError, "", filename + ": Cannot load frame");
@@ -1497,7 +1513,7 @@ GenericReaderPlugin::render(const OFX::RenderArguments &args)
     std::string proxyFile;
     if (useProxy) {
         ///Use the proxy only if getFilenameAtSequenceTime returned a valid proxy filename different from the original file
-        GetFilenameRetCodeEnum getFilenameAtSequenceTimeRetPx = getFilenameAtSequenceTime(sequenceTime, true, &proxyFile);
+        GetFilenameRetCodeEnum getFilenameAtSequenceTimeRetPx = getFilenameAtSequenceTime(sequenceTime, true, true, &proxyFile);
         switch (getFilenameAtSequenceTimeRetPx) {
             case eGetFileNameFailed:
                 // should never happen: it should return at least the full res frame
@@ -1960,8 +1976,8 @@ GenericReaderPlugin::changedParam(const OFX::InstanceChangedArgs &args,
             case eGetSequenceTimeBeforeSequence:
             case eGetSequenceTimeWithinSequence:
             case eGetSequenceTimeAfterSequence: {
-                GetFilenameRetCodeEnum getFilenameAtSequenceTimeRet   = getFilenameAtSequenceTime(sequenceTime, false, &originalFileName);
-                GetFilenameRetCodeEnum getFilenameAtSequenceTimeRetPx = getFilenameAtSequenceTime(sequenceTime, true, &proxyFile);
+                GetFilenameRetCodeEnum getFilenameAtSequenceTimeRet   = getFilenameAtSequenceTime(sequenceTime, false, true, &originalFileName);
+                GetFilenameRetCodeEnum getFilenameAtSequenceTimeRetPx = getFilenameAtSequenceTime(sequenceTime, true, true, &proxyFile);
 
                 if (getFilenameAtSequenceTimeRet == eGetFileNameReturnedFullRes &&
                     getFilenameAtSequenceTimeRetPx ==  eGetFileNameReturnedProxy &&
@@ -2225,7 +2241,7 @@ GenericReaderPlugin::getClipPreferences(OFX::ClipPreferencesSetter &clipPreferen
     if (getSequenceTimeDomainInternal(tmp, false)) {
         timeDomainFromSequenceTimeDomain(tmp, false);
         std::string filename;
-        GetFilenameRetCodeEnum e = getFilenameAtSequenceTime(tmp.min, false, &filename);
+        GetFilenameRetCodeEnum e = getFilenameAtSequenceTime(tmp.min, false, true, &filename);
         if (e == eGetFileNameReturnedFullRes) {
             OfxRectI bounds;
             double par = 1.;

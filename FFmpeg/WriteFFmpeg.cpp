@@ -1065,6 +1065,14 @@ private:
 #if OFX_FFMPEG_MBDECISION
     OFX::ChoiceParam* _mbDecision;
 #endif
+    
+    // Used in writeVideo as a contiguous buffer. The size of the buffer remains throughout
+    // the encoding of the whole video. Since the plug-in is instanceSafe, we do not need to lock it
+    // since 2 renders will never use it at the same time.
+    // We do not use a std::vector<uint8_t> here because of unnecessary initialization
+    // http://stackoverflow.com/questions/17347254/why-is-allocation-and-deallocation-of-stdvector-slower-than-dynamic-array-on-m
+    uint8_t* _scratchBuffer;
+    std::size_t _scratchBufferSize;
 };
 
 
@@ -1273,6 +1281,8 @@ WriteFFmpegPlugin::WriteFFmpegPlugin(OfxImageEffectHandle handle, const std::vec
 #if OFX_FFMPEG_MBDECISION
 , _mbDecision(0)
 #endif
+, _scratchBuffer(0)
+, _scratchBufferSize(0)
 {
     _rodPixel.x1 = _rodPixel.y1 = 0;
     _rodPixel.x2 = _rodPixel.y2 = -1;
@@ -1302,8 +1312,10 @@ WriteFFmpegPlugin::WriteFFmpegPlugin(OfxImageEffectHandle handle, const std::vec
 
 }
 
-WriteFFmpegPlugin::~WriteFFmpegPlugin(){
-    
+WriteFFmpegPlugin::~WriteFFmpegPlugin()
+{
+    delete [] _scratchBuffer;
+    _scratchBufferSize = 0;
 }
 
 
@@ -2487,8 +2499,6 @@ int WriteFFmpegPlugin::writeVideo(AVFormatContext* avFormatContext, AVStream* av
     int width = _rodPixel.x2-_rodPixel.x1;
     int height = _rodPixel.y2-_rodPixel.y1;
     
-    int picSize = avpicture_get_size(pixelFormatCodec, width, height);
-
     AVPicture avPicture = {{0}, {0}};
     AVFrame* avFrame = NULL;
 
@@ -2592,17 +2602,16 @@ int WriteFFmpegPlugin::writeVideo(AVFormatContext* avFormatContext, AVStream* av
                 error = true;
             }
         } else {
-            // Allocate a contiguous block of memory. This is to scope the
+            // Use a contiguous block of memory. This is to scope the
             // buffer allocation and ensure that memory is released even
             // if errors or exceptions occur. A std::vector will allocate
             // contiguous memory.
-            std::vector<uint8_t> outbuf(picSize);
             
             AVPacket pkt;
             av_init_packet(&pkt);
             // NOTE: If |flush| is true, then avFrame will be NULL at this point as
             //       alloc will not have been called.
-            const int bytesEncoded = encodeVideo(avCodecContext, &outbuf.front(), picSize, avFrame);
+            const int bytesEncoded = encodeVideo(avCodecContext, _scratchBuffer, (int)_scratchBufferSize, avFrame);
             const bool encodeSucceeded = (bytesEncoded > 0);
             if (encodeSucceeded) {
                 if (avCodecContext->coded_frame && (avCodecContext->coded_frame->pts != AV_NOPTS_VALUE))
@@ -2611,7 +2620,7 @@ int WriteFFmpegPlugin::writeVideo(AVFormatContext* avFormatContext, AVStream* av
                     pkt.flags |= AV_PKT_FLAG_KEY;
                 
                 pkt.stream_index = avStream->index;
-                pkt.data = &outbuf[0];
+                pkt.data = &_scratchBuffer[0];
                 pkt.size = bytesEncoded;
                 
                 const int writeResult = av_write_frame(avFormatContext, &pkt);
@@ -2857,6 +2866,16 @@ void WriteFFmpegPlugin::beginEncode(const std::string& filename,
                 // Some formats want stream headers to be separate.
                 if (formatContext_->oformat->flags & AVFMT_GLOBALHEADER)
                     avCodecContext->flags |= CODEC_FLAG_GLOBAL_HEADER;
+                // Activate multithreaded decoding. This must be done before opening the codec; see
+                // http://lists.gnu.org/archive/html/bino-list/2011-08/msg00019.html
+#              ifdef AV_CODEC_CAP_AUTO_THREADS
+                if (avCodecContext->codec->capabilities & AV_CODEC_CAP_AUTO_THREADS) {
+                    avCodecContext->thread_count = 0;
+                } else
+#              endif
+                {
+                    avCodecContext->thread_count = OFX::MultiThread::getNumCPUs();
+                }
 
                 if (openCodec(formatContext_, audioCodec, streamAudio_) < 0) {
                     freeFormat();
@@ -2920,9 +2939,17 @@ void WriteFFmpegPlugin::beginEncode(const std::string& filename,
 
         AVCodecContext* avCodecContext = _streamVideo->codec;
         avCodecContext->pix_fmt = targetPixelFormat;
+        
+        std::size_t picSize = (std::size_t)avpicture_get_size(targetPixelFormat, rodPixel.x2 - rodPixel.x1, rodPixel.y2 - rodPixel.y1);
+        if (_scratchBufferSize < picSize) {
+            delete [] _scratchBuffer;
+            _scratchBuffer = new uint8_t[picSize];
+            _scratchBufferSize = picSize;
+        }
+        
         avCodecContext->bits_per_raw_sample = outBitDepth;
         avCodecContext->sample_aspect_ratio = av_d2q(pixelAspectRatio, 255);
-        
+
         // Now that the stream has been created, and the pixel format
         // is known, for DNxHD, set the YUV range.
         if (AV_CODEC_ID_DNXHD == avCodecContext->codec_id) {
@@ -3202,7 +3229,7 @@ WriteFFmpegPlugin::updateVisibility()
     bool bitratetParams = lossyParams && (codecShortName != "libx264" &&
                                           codecShortName != "libx264rgb" &&
                                           codecShortName != "libx265" &&
-                                          codecShortName != "mpeg2video" &
+                                          codecShortName != "mpeg2video" &&
                                           codecShortName != "mpeg4" &&
                                           codecShortName != "libopenh264" &&
                                           codecShortName != "cvid" &&
@@ -3468,6 +3495,9 @@ void WriteFFmpegPlugin::freeFormat()
         _formatContext = NULL;
     }
     _lastTimeEncoded = -1;
+    _scratchBufferSize = 0;
+    delete [] _scratchBuffer;
+    _scratchBuffer = 0;
     _isOpen = false;
 }
 
